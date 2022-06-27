@@ -97,7 +97,7 @@ func (a *App) handleDeployRequest(writer http.ResponseWriter, request *http.Requ
 	}
 
 	if payload.Branch() == a.GitBranch {
-		go a.runScript(scriptPath)
+		go a.pullAndRunScript(scriptPath)
 	} else {
 		a.logger.Debug("Push to '%s' branch ignored", payload.Branch())
 	}
@@ -107,16 +107,26 @@ func (a *App) handleDeployRequest(writer http.ResponseWriter, request *http.Requ
 	writer.Write([]byte("Thank you.\n"))
 }
 
-func (a *App) runScript(path string) {
-	a.logger.Info("Running %s", path)
+func (a *App) pullAndRunScript(path string) {
+	dir := filepath.Dir(path)
+	commands := [][]string{
+		{"git", "fetch", "--all"},
+		{"git", "reset", "--hard", "origin/" + a.GitBranch},
+		{path},
+	}
+	for _, command := range commands {
+		readableCmd := strings.Join(command, " ")
+		a.logger.Info("Running %s in %s", readableCmd, dir)
 
-	cmd := exec.Command(path)
-	cmd.Dir = filepath.Dir(path)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+		cmd := exec.Command(command[0], command[1:]...)
+		cmd.Dir = dir
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
 
-	if err := cmd.Run(); err != nil {
-		a.logger.Error("Run %s failed: %s", path, err)
+		if err := cmd.Run(); err != nil {
+			a.logger.Error("Run %s failed: %s", readableCmd, err)
+			return
+		}
 	}
 }
 
